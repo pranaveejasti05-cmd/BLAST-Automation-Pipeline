@@ -1,9 +1,12 @@
 
 import streamlit as st
 import pandas as pd
+
 from Bio import SeqIO
 from Bio.Blast import NCBIWWW, NCBIXML
+
 from io import StringIO
+import time
 
 
 # ==========================================
@@ -20,8 +23,12 @@ st.title("🧬 BLAST Automation Pipeline")
 
 st.write(
     "An automated bioinformatics application for "
-    "DNA and protein sequence similarity analysis "
-    "using Python, Biopython and NCBI BLAST."
+    "DNA and protein sequence similarity analysis."
+)
+
+st.markdown(
+    "Developed using Python, Biopython, NCBI BLAST "
+    "and Streamlit."
 )
 
 st.divider()
@@ -34,25 +41,31 @@ st.divider()
 st.sidebar.title("About the Project")
 
 st.sidebar.write(
-    "This application automates biological sequence "
-    "similarity searching using NCBI BLAST."
+    """
+    The BLAST Automation Pipeline simplifies
+    biological sequence similarity searching.
+
+    Users can submit DNA or protein sequences,
+    perform BLAST searches and view matching
+    sequences in an organized format.
+    """
 )
 
 st.sidebar.info(
-    "DNA sequences → BLASTN\n\n"
-    "Protein sequences → BLASTP"
+    "BLASTN is used for DNA sequences.\n\n"
+    "BLASTP is used for protein sequences."
 )
 
 st.sidebar.markdown("---")
 
-st.sidebar.write("**Technologies Used**")
+st.sidebar.subheader("Technologies Used")
 
 st.sidebar.write(
     "- Python\n"
     "- Biopython\n"
     "- NCBI BLAST\n"
     "- Streamlit\n"
-    "- Pandas\n"
+    "- Pandas"
 )
 
 
@@ -63,31 +76,35 @@ st.sidebar.write(
 st.header("1. Sequence Input")
 
 sequence_type = st.radio(
-    "Select sequence type:",
+    "Select your sequence type:",
     ["DNA", "Protein"],
     horizontal=True
 )
 
 input_method = st.radio(
-    "Choose input method:",
+    "Choose your input method:",
     ["Paste Sequence", "Upload FASTA File"],
     horizontal=True
 )
 
 sequence = ""
 
+
 if input_method == "Paste Sequence":
 
     sequence = st.text_area(
         "Enter your biological sequence:",
-        height=150,
-        placeholder="Enter DNA or protein sequence here..."
+        height=160,
+        placeholder=(
+            "Example:\n"
+            "ATGCGTACGTAGCTAG..."
+        )
     )
 
 else:
 
     uploaded_file = st.file_uploader(
-        "Upload a FASTA file",
+        "Upload your FASTA file",
         type=["fasta", "fa", "fna", "faa", "txt"]
     )
 
@@ -102,16 +119,16 @@ else:
                 "fasta"
             )
 
-            sequence = str(record.seq).upper()
+            sequence = str(record.seq)
 
             st.success(
                 f"FASTA file loaded successfully: {record.id}"
             )
 
-        except Exception as e:
+        except Exception as error:
 
             st.error(
-                f"Unable to read FASTA file: {e}"
+                f"Unable to read FASTA file: {error}"
             )
 
 
@@ -124,7 +141,7 @@ st.header("2. NCBI Settings")
 email = st.text_input(
     "Enter your email address:",
     placeholder="yourname@example.com",
-    help="An email address is required to identify your NCBI request."
+    help="Enter an email address for NCBI identification."
 )
 
 
@@ -134,6 +151,7 @@ email = st.text_input(
 
 def validate_sequence(sequence, sequence_type):
 
+    # Remove spaces and convert to uppercase
     sequence = "".join(sequence.split()).upper()
 
     if not sequence:
@@ -155,8 +173,8 @@ def validate_sequence(sequence, sequence_type):
     if not set(sequence).issubset(valid_characters):
 
         return False, (
-            "Invalid characters detected. "
-            "Please check your DNA or protein sequence."
+            "Invalid characters found in the sequence. "
+            "Please check your DNA or protein input."
         )
 
     return True, sequence
@@ -168,13 +186,11 @@ def validate_sequence(sequence, sequence_type):
 
 def run_blast(sequence, sequence_type, email):
 
-    # Configure NCBI identification details
-
+    # Configure NCBI identification
     NCBIWWW.email = email
     NCBIWWW.tool = "BLAST_Automation_Pipeline"
 
-    # Select the appropriate BLAST algorithm
-
+    # Select appropriate BLAST program
     if sequence_type == "DNA":
 
         program = "blastn"
@@ -185,20 +201,17 @@ def run_blast(sequence, sequence_type, email):
         program = "blastp"
         database = "nr"
 
-    # Submit sequence to NCBI BLAST
-
+    # Submit the sequence to NCBI BLAST
     result_handle = NCBIWWW.qblast(
         program,
         database,
         sequence,
         hitlist_size=10,
-        expect=10.0,
         format_type="XML"
     )
 
+    # Parse returned XML results
     try:
-
-        # Parse returned XML results
 
         blast_record = NCBIXML.read(result_handle)
 
@@ -208,35 +221,34 @@ def run_blast(sequence, sequence_type, email):
 
     results = []
 
-    # Extract alignment information
-
+    # Extract information from each alignment
     for alignment in blast_record.alignments:
 
         if not alignment.hsps:
             continue
 
-        # Select the highest-scoring alignment
-
+        # Select the HSP with the highest bit score
         hsp = max(
             alignment.hsps,
             key=lambda x: x.bits
         )
 
         # Calculate percentage identity
-
         percentage_identity = (
             hsp.identities / hsp.align_length
         ) * 100
 
         # Calculate query coverage
+        aligned_query_length = sum(
+            1 for character in hsp.query
+            if character != "-"
+        )
 
         query_coverage = (
-            (hsp.query_end - hsp.query_start + 1)
-            / len(sequence)
+            aligned_query_length / len(sequence)
         ) * 100
 
-        # Store extracted results
-
+        # Store results
         results.append({
 
             "Accession": alignment.accession,
@@ -278,8 +290,7 @@ if st.button(
     use_container_width=True
 ):
 
-    # Validate the input sequence
-
+    # Validate sequence
     is_valid, validation_result = validate_sequence(
         sequence,
         sequence_type
@@ -304,13 +315,26 @@ if st.button(
             f"Length: {len(sequence)}"
         )
 
-        # Submit BLAST request
+        # Display selected algorithm
+        if sequence_type == "DNA":
 
+            st.info(
+                "Selected algorithm: BLASTN | Database: nt"
+            )
+
+        else:
+
+            st.info(
+                "Selected algorithm: BLASTP | Database: nr"
+            )
+
+        # Submit BLAST request
         try:
 
             with st.spinner(
-                "Connecting to NCBI BLAST. "
-                "Please wait while your sequence is analyzed..."
+                "Connecting to NCBI BLAST... "
+                "Your sequence is being analyzed. "
+                "Please wait."
             ):
 
                 results = run_blast(
@@ -320,7 +344,6 @@ if st.button(
                 )
 
             # Display results
-
             st.divider()
 
             st.header("4. BLAST Results")
@@ -330,11 +353,11 @@ if st.button(
                 df = pd.DataFrame(results)
 
                 st.success(
-                    f"Successfully retrieved {len(results)} matches!"
+                    f"Analysis completed! "
+                    f"{len(results)} matching results found."
                 )
 
-                # Display summary metrics
-
+                # Summary metrics
                 col1, col2, col3 = st.columns(3)
 
                 col1.metric(
@@ -352,8 +375,7 @@ if st.button(
                     f"{df['Identity (%)'].max()}%"
                 )
 
-                # Display results table
-
+                # Results table
                 st.subheader("Sequence Similarity Results")
 
                 st.dataframe(
@@ -362,43 +384,83 @@ if st.button(
                     hide_index=True
                 )
 
-                # Download CSV results
-
-                csv = df.to_csv(index=False)
+                # CSV download
+                csv_data = df.to_csv(
+                    index=False
+                ).encode("utf-8")
 
                 st.download_button(
                     label="⬇ Download Results as CSV",
-                    data=csv,
-                    file_name="blast_results.csv",
-                    mime="text/csv"
+                    data=csv_data,
+                    file_name="BLAST_Results.csv",
+                    mime="text/csv",
+                    use_container_width=True
                 )
 
             else:
 
                 st.warning(
-                    "No matching sequences were returned by BLAST."
+                    "No matching sequences were returned "
+                    "for this search."
                 )
 
-        except Exception as e:
+        except Exception as error:
 
             st.error(
-                f"BLAST analysis failed: {e}"
+                f"BLAST analysis failed: {error}"
+            )
+
+            st.warning(
+                "NCBI may be temporarily unavailable, "
+                "or the request may have been rejected."
             )
 
             st.info(
-                "Possible causes include an NCBI server issue, "
-                "network problem, rejected request or invalid input. "
-                "Please wait and try again."
+                "Wait a few minutes before trying again. "
+                "You can also test the sequence directly "
+                "on the official NCBI BLAST website."
             )
 
 
 # ==========================================
-# 8. FOOTER
+# 8. PROJECT INFORMATION
+# ==========================================
+
+st.divider()
+
+st.header("5. About BLAST Parameters")
+
+with st.expander("Understand the results"):
+
+    st.write(
+        """
+        **Percentage Identity:** Measures the percentage
+        of identical residues in an alignment.
+
+        **Query Coverage:** Indicates how much of the
+        input sequence is included in the alignment.
+
+        **E-value:** Estimates the number of alignments
+        expected by chance. Lower values generally
+        indicate more significant matches.
+
+        **Bit Score:** Measures alignment quality.
+        Higher scores generally indicate better alignments.
+
+        **Accession Number:** Identifies the matching
+        database sequence.
+        """
+    )
+
+
+# ==========================================
+# 9. FOOTER
 # ==========================================
 
 st.divider()
 
 st.caption(
     "BLAST Automation Pipeline | "
-    "Developed using Python, Biopython, NCBI BLAST and Streamlit"
+    "Computational Biology Project | "
+    "Python + Biopython + Streamlit"
 )
